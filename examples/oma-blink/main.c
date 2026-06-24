@@ -53,8 +53,6 @@ struct rcc {
 // Treat address 0x40023800 like the defined rcc struct.
 #define RCC ((struct rcc*)0x40023800)
 
-// -----------------------------------------
-
 // Struct in the shape of a single GPIO port in memory
 struct gpio {
     volatile uint32_t MODER;    // Mode Register                    : 0x00
@@ -69,6 +67,51 @@ struct gpio {
     volatile uint32_t AFRH;     // Alternate Function High Register : 0x24
 };
 
+// -------- SYSTICK AND TIMERS ----
+
+/*
+ * System timer register in the SCS
+ */
+struct syst {
+    volatile uint32_t CSR;    // Control and Status Register
+    volatile uint32_t RVR;    // Reload Value Register
+    volatile uint32_t CVR;    // Current Value Register
+    volatile uint32_t CALIB;  // Calibration Value Registerr
+};
+
+// Set SYST to begin at 0xE000E010
+#define SYST ((struct syst*)0xE000E010)
+
+/*
+ * A timer register map for TIMX X = {2, 5}
+ *
+ * Only use with general-purpose timers TIM2 and TIM5!
+ */
+struct timx {
+    volatile uint32_t CR1;       // Control  1
+    volatile uint32_t CR2;       // Control  2
+    volatile uint32_t SMCR;      // Slave Mode Control
+    volatile uint32_t DIER;      // DMA/Interrupt Enable
+    volatile uint32_t SR;        // Status
+    volatile uint32_t EGR;       // Event Generation
+    volatile uint32_t CCMR1;     // Capture/Compare Mode 1
+    volatile uint32_t CCMR2;     // Capture/Compare Mode 2
+    volatile uint32_t CCER;      // Capture/Compare Enable
+    volatile uint32_t CNT;       // Counter
+    volatile uint32_t PSC;       // Prescaler
+    volatile uint32_t ARR;       // Auto-Reload
+    volatile uint32_t CCR1;      // Capture/Compare 1
+    volatile uint32_t CCR2;      // Capture/Compare 2
+    volatile uint32_t CCR3;      // Capture/Compare 3
+    volatile uint32_t CCR4;      // Capture/Compare 4
+    volatile uint32_t RESERVED;  // Reserved
+    volatile uint32_t DCR;       // DMA Control
+    volatile uint32_t DMAR;      // DMA Address for full transfer
+    volatile uint32_t OR;        // Option Register (TIM2 & TIM5)
+};
+
+// -------- GPIO registers --------
+
 // GPIO Ports
 #define GPIOA ((struct gpio*)0x40020000)
 #define GPIOB ((struct gpio*)0x40020400)
@@ -77,29 +120,14 @@ struct gpio {
 #define GPIOE ((struct gpio*)0x40021000)
 #define GPIOH ((struct gpio*)0x40021C00)
 
-// -------- GPIO registers --------
+// -------- FUNCTION PROTOTYPES --------
 
-// -----------------------------------------
+int main(void);
+void init_led(void);
+void init_timer(void);
+static void spin(uint32_t);
 
-int main(void) {
-    // Get that LED on
-    RCC->AHB1ENR |= (1U << 0);         // Set first bit to enable GPIOAEN
-    GPIOA->MODER &= ~(3U << (5 * 2));  // 11 Mask to reset PA5 mode to 00
-    GPIOA->MODER |= (1U << (5 * 2));   // Set PA5 mode to 01 (GP Output Mode)
-    GPIOA->ODR |= (1U << 5);           // Set corresponding output pint to HIGH
-
-    uint32_t cnt = 0, half;
-    while (1) {
-        cnt += 2;
-        half = cnt / 2;
-        ++half;
-        if (half == 123) {
-            cnt = 0;
-        }
-    }
-}
-
-// Startup code
+// -------- STARTUP CODE --------
 __attribute__((naked, noreturn)) void _reset(void) {
     extern long _sbss, _ebss, _sdata, _edata, _sidata;
 
@@ -116,3 +144,43 @@ extern void _estack(void);  // Defined in link.ld
 
 // 16 standard and 91 STM32-specific handlers
 __attribute__((section(".vectors"))) void (*const tab[16 + 91])(void) = {_estack, _reset};  // More interrupt handlers go here eventually?
+
+// -------- TIMERS --------
+/*
+ * This let's us use timers instead of some lame loops.
+ */
+void init_timer(void) {
+    // Set System Configuration Controller Clock Enable bit(SYSCFGEN)
+    RCC->APB2ENR |= (1U << 15);  // Set bit 15
+}
+
+// -------- MAIN ------------------------------------
+int main(void) {
+    uint32_t DELAY = 500000;
+
+    init_led();
+
+    for (;;) {
+        GPIOA->ODR ^= (1U << 5);  // XOR PA5 bit to toggle led
+        spin(DELAY);
+    }
+}
+
+/*
+ * Enable clock for AHB1 bus and set Pin A5 to GP output mode.
+ * This is to use the STM32F411RE Nucleo boards built-in user led.
+ */
+void init_led(void) {
+    // Get that LED on
+    RCC->AHB1ENR |= (1U << 0);         // Set first bit to enable GPIOAEN
+    GPIOA->MODER &= ~(3U << (5 * 2));  // 11 Mask to reset PA5 mode to 00
+    GPIOA->MODER |= (1U << (5 * 2));   // Set PA5 mode to 01 (GP Output Mode)
+}
+
+/*
+ * Clumsy blocking sleep.
+ */
+static inline void spin(volatile uint32_t delay) {
+    while (delay--) {
+    }
+}
