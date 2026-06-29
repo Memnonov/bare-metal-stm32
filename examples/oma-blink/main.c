@@ -2,6 +2,7 @@
  * Minimal bare-metal STM32 example
  */
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #define BIT(x) (1UL << (x))                             // Get mask for the xth bit
@@ -149,11 +150,18 @@ __attribute__((naked, noreturn)) void _reset(void) {
  * Trap execution in a loop in case of an unexpected exception.
  */
 static void _default_handler(void) {
-    for (;;) {
+    while (true) {
     }
 }
 
-static void _systick_handler(void) {}
+/*
+ * System Ticks
+ *
+ * Static global counter for System Timer ticks.
+ */
+static volatile uint32_t s_ticks = 0;
+
+static void _systick_handler(void) { ++s_ticks; }
 
 // -------- VECTOR TABLE --------
 
@@ -189,30 +197,35 @@ void init_system_tick(uint32_t ticks) {
     // Set System Configuration Controller Clock Enable bit(SYSCFGEN)
     SYSTICK->RVR = ticks - 1;                  // Set reload value to ticks
     SYSTICK->CVR = 0;                          // Clear Current Value Register
-    SYSTICK->CSR |= BIT(1) | BIT(2) | BIT(3);  // Enable SysTick and use processor clock
+    SYSTICK->CSR |= BIT(0) | BIT(1) | BIT(2);  // Enable SysTick and use processor clock
                                                //
     RCC->APB2ENR |= (1U << 14);                // Enable System Configuration Controller Clock
 }
 
-/*
- * System Ticks
- *
- * Static global counter for System Timer ticks.
- */
-static volatile uint32_t s_ticks = 0;
-
 // -------- MAIN ------------------------------------
 int main(void) {
-    const uint32_t DELAY = 500000;
+    // const uint32_t DELAY = 500000;
     const uint32_t CLOCK_16_MHZ = 16000000;  // 16 Mhz clock
+    const uint32_t BLINK_INTERVAL = 500;
 
     init_system_tick(CLOCK_16_MHZ / 1000);  // This gives us a 1ms SysTick
 
     init_led();
 
+    // Init counters for blinks
+    uint32_t now = 0;
+    uint32_t next_blink = now + BLINK_INTERVAL;
+
+    // Main loop
     for (;;) {
-        GPIOA->ODR ^= (1U << 5);  // XOR PA5 bit to toggle led
-        spin(DELAY);
+        // GPIOA->ODR ^= (1U << 5);  // XOR PA5 bit to toggle led
+        // spin(DELAY);
+        now = s_ticks;
+
+        if (now >= next_blink) {
+            GPIOA->ODR ^= (1U << 5);  // XOR PA5 bit to toggle led
+            next_blink += BLINK_INTERVAL;
+        }
     }
 }
 
