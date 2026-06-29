@@ -80,7 +80,7 @@ struct syst {
 };
 
 // Set SYST to begin at 0xE000E010
-#define SYST ((struct syst*)0xE000E010)
+#define SYSTICK ((struct syst*)0xE000E010)
 
 /*
  * A timer register map for TIMX X = {2, 5}
@@ -124,8 +124,11 @@ struct timx {
 
 int main(void);
 void init_led(void);
-void init_timer(void);
+void init_system_tick(uint32_t);
 static void spin(uint32_t);
+
+static void _default_handler(void);
+static void _systick_handler(void);
 
 // -------- STARTUP CODE --------
 __attribute__((naked, noreturn)) void _reset(void) {
@@ -140,23 +143,70 @@ __attribute__((naked, noreturn)) void _reset(void) {
     for (;;) (void)0;  // Infinite loop - should never be reached
 }
 
+// -------- VECTOR TABLE HANDLERS --------
+
+/*
+ * Trap execution in a loop in case of an unexpected exception.
+ */
+static void _default_handler(void) {
+    for (;;) {
+    }
+}
+
+static void _systick_handler(void) {}
+
+// -------- VECTOR TABLE --------
+
 extern void _estack(void);  // Defined in link.ld
 
 // 16 standard and 91 STM32-specific handlers
-__attribute__((section(".vectors"))) void (*const tab[16 + 91])(void) = {_estack, _reset};  // More interrupt handlers go here eventually?
+__attribute__((section(".vectors"))) void (*const tab[16 + 91])(void) = {
+    _estack,           // 0: Stack pointer begin
+    _reset,            // 1: Reset function,
+    _default_handler,  // 2: NMI
+    _default_handler,  // 3: HardFault
+    _default_handler,  // 4: MemManage
+    _default_handler,  // 5: BusFault
+    _default_handler,  // 6: UsageFault
+    _default_handler,  // 7: Reserverd
+    _default_handler,  // 8: Reserverd
+    _default_handler,  // 9: Reserverd
+    _default_handler,  // 10: Reserved
+    _default_handler,  // 11: SVCall
+    _default_handler,  // 12: DebugMonitor
+    _default_handler,  // 13: Reserved
+    _default_handler,  // 14: PendSV
+    _systick_handler,  // 15: SysTick
+                       // And more...
+};
 
 // -------- TIMERS --------
 /*
- * This let's us use timers instead of some lame loops.
+ * This let's us the System Timer instead of some lame loops.
+ * Parameter ticks determines timer frequency.
  */
-void init_timer(void) {
+void init_system_tick(uint32_t ticks) {
     // Set System Configuration Controller Clock Enable bit(SYSCFGEN)
-    RCC->APB2ENR |= (1U << 15);  // Set bit 15
+    SYSTICK->RVR = ticks - 1;                  // Set reload value to ticks
+    SYSTICK->CVR = 0;                          // Clear Current Value Register
+    SYSTICK->CSR |= BIT(1) | BIT(2) | BIT(3);  // Enable SysTick and use processor clock
+                                               //
+    RCC->APB2ENR |= (1U << 14);                // Enable System Configuration Controller Clock
 }
+
+/*
+ * System Ticks
+ *
+ * Static global counter for System Timer ticks.
+ */
+static volatile uint32_t s_ticks = 0;
 
 // -------- MAIN ------------------------------------
 int main(void) {
-    uint32_t DELAY = 500000;
+    const uint32_t DELAY = 500000;
+    const uint32_t CLOCK_16_MHZ = 16000000;  // 16 Mhz clock
+
+    init_system_tick(CLOCK_16_MHZ / 1000);  // This gives us a 1ms SysTick
 
     init_led();
 
