@@ -124,8 +124,9 @@ struct timx {
 // -------- FUNCTION PROTOTYPES --------
 
 int main(void);
-void init_led(void);
-void init_system_tick(uint32_t);
+static void init_led(void);
+static void init_system_tick(uint32_t);
+static void init_sysclk(void);
 static void spin(uint32_t);
 
 static void _default_handler(void);
@@ -188,18 +189,58 @@ __attribute__((section(".vectors"))) void (*const tab[16 + 91])(void) = {
                        // And more...
 };
 
-// -------- TIMERS --------
+// -------- CLOCKS & TIMERS --------
+
+/*
+ * Initialize System Clock to run faster.
+ *
+ * Sets the system clock to use the High Speed Internal oscillator
+ * and sets it to 84 Mhz.
+ */
+static void init_sysclk(void) {
+    // Dísable PLL while initializing it.
+    RCC->CR &= ~BIT(24);
+
+    // Ajust FLASH latency for faster CPU: for 86 we want 2 WS (3 CPU cycles)
+    // ADJUST IT
+
+    while (RCC->CR & BIT(25)) {
+        // Wait until PPLRDY is cleared
+    };
+
+    // Set PLLM to 8 (0b11) so that HSI/PLL = 16/8 = 2 MHz
+    // M = 8
+    // N = 168
+    // P = 4
+    // Q = 7
+    // and we should get 84 MHzu CPU and 48 MHz USB...
+    // also remember to adjust FLASH delay whatever?
+
+    // Enable HSI with HSION bit
+    RCC->CR |= BIT(0);
+
+    // Check if HSI is ready (HSIRDY bit)
+    // bool hsi_rdy = (RCC->CR & (1U << 1)) != 0;
+    // Or wait for it
+    while (!(RCC->CR & BIT(1))) {
+        // Wait for HSIRDY
+    }
+
+    // Enable PLL after initializing it.
+    RCC->CR |= BIT(24);
+}
+
 /*
  * This let's us the System Timer instead of some lame loops.
  * Parameter ticks determines timer frequency.
  */
-void init_system_tick(uint32_t ticks) {
-    // Set System Configuration Controller Clock Enable bit(SYSCFGEN)
+static void init_system_tick(uint32_t ticks) {
     SYSTICK->RVR = ticks - 1;                  // Set reload value to ticks
     SYSTICK->CVR = 0;                          // Clear Current Value Register
     SYSTICK->CSR |= BIT(0) | BIT(1) | BIT(2);  // Enable SysTick and use processor clock
-                                               //
-    RCC->APB2ENR |= (1U << 14);                // Enable System Configuration Controller Clock
+
+    // This not actually needed...
+    // RCC->APB2ENR |= (1U << 14);  // Enable System Configuration Controller Clock
 }
 
 // -------- MAIN ------------------------------------
@@ -233,7 +274,7 @@ int main(void) {
  * Enable clock for AHB1 bus and set Pin A5 to GP output mode.
  * This is to use the STM32F411RE Nucleo boards built-in user led.
  */
-void init_led(void) {
+static void init_led(void) {
     // Get that LED on
     RCC->AHB1ENR |= (1U << 0);         // Set first bit to enable GPIOAEN
     GPIOA->MODER &= ~(3U << (5 * 2));  // 11 Mask to reset PA5 mode to 00
