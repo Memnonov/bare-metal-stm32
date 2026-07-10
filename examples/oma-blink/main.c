@@ -111,6 +111,13 @@ struct timx {
     volatile uint32_t OR;        // Option Register (TIM2 & TIM5)
 };
 
+// -------- FLASH --------
+struct flash_interface_registers {
+    volatile uint32_t ACR;  // Access Control Register
+};
+
+#define FLASH ((struct flash_interface_registers*)0x40023C00)
+
 // -------- GPIO registers --------
 
 // GPIO Ports
@@ -136,13 +143,17 @@ static void _systick_handler(void);
 __attribute__((naked, noreturn)) void _reset(void) {
     extern long _sbss, _ebss, _sdata, _edata, _sidata;
 
-    for (long* dst = &_sbss; dst < &_ebss; dst++) *dst = 0;
+    for (long* dst = &_sbss; dst < &_ebss; dst++) {
+        *dst = 0;
+    }
 
-    for (long *dst = &_sdata, *src = &_sidata; dst < &_edata;) *dst++ = *src++;
+    for (long *dst = &_sdata, *src = &_sidata; dst < &_edata;) {
+        *dst++ = *src++;
+    }
 
     main();
 
-    for (;;) (void)0;  // Infinite loop - should never be reached
+    while (true) (void)0;  // Infinite loop - should never be reached
 }
 
 // -------- VECTOR TABLE HANDLERS --------
@@ -198,36 +209,56 @@ __attribute__((section(".vectors"))) void (*const tab[16 + 91])(void) = {
  * and sets it to 84 Mhz.
  */
 static void init_sysclk(void) {
+    // Assure HSION is enabled
+    RCC->CR |= BIT(0);
+
+    while (!(RCC->CR & BIT(1))) {
+        // Wait until HSI is ready (HSIRDY)
+    }
+
     // Dísable PLL while initializing it.
     RCC->CR &= ~BIT(24);
-
-    // Ajust FLASH latency for faster CPU: for 86 we want 2 WS (3 CPU cycles)
-    // ADJUST IT
 
     while (RCC->CR & BIT(25)) {
         // Wait until PPLRDY is cleared
     };
 
-    // Set PLLM to 8 (0b11) so that HSI/PLL = 16/8 = 2 MHz
-    // M = 8
-    // N = 168
-    // P = 4
-    // Q = 7
-    // and we should get 84 MHzu CPU and 48 MHz USB...
-    // also remember to adjust FLASH delay whatever?
+    // Select HSI as the PLLSRC clock source
+    RCC->PLLCFGR &= ~BIT(22);
 
-    // Enable HSI with HSION bit
-    RCC->CR |= BIT(0);
+    // Set PLL multiplication and division
+    // We should get 84 MHzu CPU and 48 MHz USB...
+    // First, reset all those bits...
+    RCC->PLLCFGR &= ~((0x3FU << 0) |   // M
+                      (0x1FFU << 6) |  // N
+                      (0x3U << 16) |   // P
+                      (0xFU << 24));   // Q
+    // Then set values
+    RCC->PLLCFGR |= BIT(4);    // M = 8
+    RCC->PLLCFGR |= 168 << 6;  // N = 168
+    RCC->PLLCFGR |= BIT(16);   // P = 4
+    RCC->PLLCFGR |= 7 << 24;   // Q = 7
 
-    // Check if HSI is ready (HSIRDY bit)
-    // bool hsi_rdy = (RCC->CR & (1U << 1)) != 0;
-    // Or wait for it
-    while (!(RCC->CR & BIT(1))) {
-        // Wait for HSIRDY
+    // Adjust FLASH latency for faster CPU: for 84 we want 2 WS (3 CPU cycles)
+    FLASH->ACR &= ~0xFU;  // Clear latency bits
+    FLASH->ACR |= BIT(2);
+    // Enable Instruction and Prefetch caches while we're at it
+    FLASH->ACR |= BIT(8) | BIT(9);
+
+    // Enable PLL
+    RCC->CR |= BIT(24);
+
+    while (!(RCC->CR & BIT(25))) {
+        // Wait for PLL ready (PLLRDY)
     }
 
-    // Enable PLL after initializing it.
-    RCC->CR |= BIT(24);
+    // Switch system clock to PLL
+    RCC->CFGR &= ~(3U);  // Reset
+    RCC->CFGR |= 2U;     // Set SW[1:0] to 10
+
+    while (((RCC->CFGR >> 2) & 3U) != 2U) {
+        // Wait until PLL is being used as the system clock source
+    }
 }
 
 /*
@@ -247,9 +278,10 @@ static void init_system_tick(uint32_t ticks) {
 int main(void) {
     // const uint32_t DELAY = 500000;
     const uint32_t CLOCK_16_MHZ = 16000000;  // 16 Mhz clock
-    const uint32_t BLINK_INTERVAL = 500;
+    const uint32_t BLINK_INTERVAL = 2000;
 
     init_system_tick(CLOCK_16_MHZ / 1000);  // This gives us a 1ms SysTick
+    init_sysclk();
 
     init_led();
 
