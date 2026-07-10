@@ -11,6 +11,10 @@ int main(void) {
         cnt += 2;
         half = cnt / 2;
         ++half;
+
+        if (half == 123) {
+            cnt = 0;
+        }
     }
 }
 
@@ -30,5 +34,4 @@ __attribute__((naked, noreturn)) void _reset(void) {
 extern void _estack(void);  // Defined in link.ld
 
 // 16 standard and 91 STM32-specific handlers
-__attribute__((section(".vectors"))) void (*const tab[16 + 91])(void) = {
-    _estack, _reset};
+__attribute__((section(".vectors"))) void (*const tab[16 + 91])(void) = {_estack, _reset};  // More interrupt handlers go here eventually?

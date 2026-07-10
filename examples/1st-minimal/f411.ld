@@ -3,7 +3,7 @@ ENTRY(_reset);                                   /* entry point */
 
 MEMORY {
   flash(rx) : ORIGIN = 0x08000000, LENGTH = 512k
-  sram(rwx) : ORIGIN = 0x20000000, LENGTH = 92k  /* remaining 64k in a separate address space */
+  sram(rwx) : ORIGIN = 0x20000000, LENGTH = 128k  /* F411xC/E has 128 KB of contiguous SRAM */
 }
 
 _estack     = ORIGIN(sram) + LENGTH(sram);       /* stack points to end of SRAM */
