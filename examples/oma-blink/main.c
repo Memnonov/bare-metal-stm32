@@ -113,7 +113,12 @@ struct timx {
 
 // -------- FLASH --------
 struct flash_interface_registers {
-    volatile uint32_t ACR;  // Access Control Register
+    volatile uint32_t ACR;      // Access Control Register
+    volatile uint32_t KEYR;     // Key Register
+    volatile uint32_t OPTKEYR;  // Option Key Register
+    volatile uint32_t SR;       // Status Register
+    volatile uint32_t CR;       // Control Register
+    volatile uint32_t OPTCR;    // Option Control Register
 };
 
 #define FLASH ((struct flash_interface_registers*)0x40023C00)
@@ -133,7 +138,7 @@ struct flash_interface_registers {
 int main(void);
 static void init_led(void);
 static void init_system_tick(uint32_t);
-static void init_sysclk(void);
+static void init_system_clock(void);
 static void spin(uint32_t);
 
 static void _default_handler(void);
@@ -202,13 +207,32 @@ __attribute__((section(".vectors"))) void (*const tab[16 + 91])(void) = {
 
 // -------- CLOCKS & TIMERS --------
 
+#define SYSTEM_CLK 84000000U
+#define USB_CLK 48000000U
+#define AHB_CLK 84000000U
+#define APB_HIGH_SPEED_CLK 84000000U
+#define APB_LOW_SPEED_CLK 42000000U
+
+/*
+ * Sets system clock to 84MHz
+ */
+enum PLL {
+    PLL_HSI = 16,
+    PLL_M = 8,
+    PLL_N = 168,
+    PLL_P = 1,  // Sets PLLP division 01 i.e. by 4
+    PLL_Q = 7,
+};
+
 /*
  * Initialize System Clock to run faster.
  *
  * Sets the system clock to use the High Speed Internal oscillator
  * and sets it to 84 Mhz.
  */
-static void init_sysclk(void) {
+static void init_system_clock(void) {
+    // TODO: I2S clocks (PLLI2S)
+
     // Assure HSION is enabled
     RCC->CR |= BIT(0);
 
@@ -234,10 +258,10 @@ static void init_sysclk(void) {
                       (0x3U << 16) |   // P
                       (0xFU << 24));   // Q
     // Then set values
-    RCC->PLLCFGR |= BIT(4);    // M = 8
-    RCC->PLLCFGR |= 168 << 6;  // N = 168
-    RCC->PLLCFGR |= BIT(16);   // P = 4
-    RCC->PLLCFGR |= 7 << 24;   // Q = 7
+    RCC->PLLCFGR |= PLL_M << 0;   // M = 8
+    RCC->PLLCFGR |= PLL_N << 6;   // N = 168
+    RCC->PLLCFGR |= PLL_P << 16;  // P = 4
+    RCC->PLLCFGR |= PLL_Q << 24;  // Q = 7
 
     // Adjust FLASH latency for faster CPU: for 84 we want 2 WS (3 CPU cycles)
     FLASH->ACR &= ~0xFU;  // Clear latency bits
@@ -251,6 +275,12 @@ static void init_sysclk(void) {
     while (!(RCC->CR & BIT(25))) {
         // Wait for PLL ready (PLLRDY)
     }
+
+    // Configure Bus Clocks for 84MHz
+    RCC->CFGR &= ~BIT(7);      // AHB clock division not divided -> 84Mhz (<= 100Mhz)
+    RCC->CFGR &= ~BIT(15);     // APB2 high-speed prescaler not divided -> 84Mhz (<= 100Mhz)
+    RCC->CFGR &= ~(7U << 10);  // Reset APB1 low-speed prescaler (APB2)
+    RCC->CFGR |= (4U << 10);   // APB1 low-speed prescaler divided by 2 --> 42Mhz (<= 50 limit)
 
     // Switch system clock to PLL
     RCC->CFGR &= ~(3U);  // Reset
@@ -275,13 +305,14 @@ static void init_system_tick(uint32_t ticks) {
 }
 
 // -------- MAIN ------------------------------------
-int main(void) {
-    // const uint32_t DELAY = 500000;
-    const uint32_t CLOCK_16_MHZ = 16000000;  // 16 Mhz clock
-    const uint32_t BLINK_INTERVAL = 2000;
 
-    init_system_tick(CLOCK_16_MHZ / 1000);  // This gives us a 1ms SysTick
-    init_sysclk();
+int main(void) {
+    // const uint32_t DELAY = 500000; DEPRECATED
+    // const uint32_t CLOCK_16_MHZ = 16000000;  // 16 Mhz clock DEPRECATED
+    const uint32_t BLINK_INTERVAL = 500;
+
+    init_system_clock();
+    init_system_tick(SYSTEM_CLK / 1000);  // This gives us a 1ms SysTick
 
     init_led();
 
@@ -301,6 +332,8 @@ int main(void) {
         }
     }
 }
+
+// -------- HELPERS ------------------------------------
 
 /*
  * Enable clock for AHB1 bus and set Pin A5 to GP output mode.
