@@ -29,6 +29,8 @@
  *
  * Initialize System Clock to run faster.
  *
+ * Remember to adjust flash latency first!
+ *
  * Makes the system clock use the High Speed Internal oscillator
  * and sets PLL to get a clock speed of 84 MHz.
  */
@@ -39,6 +41,6 @@ void rcc_init_system_clock(void);
  *
  * Enables a GPIO bus.
  */
-void rcc_enable_gpio(uint32_t);
+void rcc_enable_gpio(uint32_t gpio_port);
 
 #endif  // !RCC_H

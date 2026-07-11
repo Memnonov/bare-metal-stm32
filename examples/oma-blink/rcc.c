@@ -6,21 +6,11 @@
 
 #include "rcc.h"
 
+#include "flash.h"
+
 #define BIT(x) (1UL << (x))                             // Get mask for the xth bit
 #define PIN(bank, num) (((bank) - 'A') << 9) | (num))   // Find a pin somehow?
 #define PINNO(pin) (pin & 255)
-
-// -------- FLASH --------
-struct flash_interface_registers {
-    volatile uint32_t ACR;      // Access Control Register
-    volatile uint32_t KEYR;     // Key Register
-    volatile uint32_t OPTKEYR;  // Option Key Register
-    volatile uint32_t SR;       // Status Register
-    volatile uint32_t CR;       // Control Register
-    volatile uint32_t OPTCR;    // Option Control Register
-};
-
-#define FLASH ((struct flash_interface_registers*)0x40023C00)
 
 // -------- RESET AND CLOCK CONTROL --------
 
@@ -76,6 +66,7 @@ enum PLL {
     PLL_N = 168,
     PLL_P = 1,  // Sets PLLP division 01 i.e. by 4
     PLL_Q = 7,
+    SYS_CLK = 84,
 };
 
 void rcc_init_system_clock(void) {
@@ -110,11 +101,6 @@ void rcc_init_system_clock(void) {
     RCC->PLLCFGR |= PLL_N << 6;   // N = 168
     RCC->PLLCFGR |= PLL_P << 16;  // P = 4
     RCC->PLLCFGR |= PLL_Q << 24;  // Q = 7
-
-    // Adjust FLASH latency for faster CPU: for 84 we want 2 WS (3 CPU cycles)
-    FLASH->ACR &= ~0xFU;            // Clear latency bits
-    FLASH->ACR |= BIT(2);           // Set latency
-    FLASH->ACR |= BIT(8) | BIT(9);  // Enable Instruction and Prefetch caches too...
 
     // Enable PLL
     RCC->CR |= BIT(24);

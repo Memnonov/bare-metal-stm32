@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "flash.h"
 #include "rcc.h"
 
 #define BIT(x) (1UL << (x))                             // Get mask for the xth bit
@@ -185,10 +186,10 @@ static void init_system_tick(uint32_t ticks) {
 // -------- MAIN ------------------------------------
 
 int main(void) {
-    // const uint32_t DELAY = 500000; DEPRECATED
-    // const uint32_t CLOCK_16_MHZ = 16000000;  // 16 Mhz clock DEPRECATED
+    const uint32_t CLOCK_84_MHZ = 84000000;
     const uint32_t BLINK_INTERVAL = 500;
 
+    flash_set_latency(CLOCK_84_MHZ / 1000000);
     rcc_init_system_clock();
     rcc_enable_gpio(RCC_AHB1ENR_GPIOAEN);
     init_system_tick(SYSTEM_CLK / 1000);  // This gives us a 1ms SysTick

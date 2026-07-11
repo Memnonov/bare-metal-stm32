@@ -7,7 +7,7 @@ CFLAGS  ?=  -W -Wall -Wextra -Werror -Wundef -Wshadow -Wdouble-promotion \
 LDFLAGS ?= -T f411.ld -nostartfiles -nostdlib --specs=nano.specs \
 	-lc -lgcc -Wl,--gc-sections -Wl,-Map=$@.map
 
-SOURCES = main.c rcc.c
+SOURCES = main.c rcc.c flash.c
 OBJS    = $(SOURCES:.c=.o)
 DEPS    = $(OBJS:.o=.d)
 
